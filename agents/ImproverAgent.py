@@ -3,7 +3,7 @@ from transformers import pipeline, AutoTokenizer
 class ImproverAgent:
     def __init__(self, model_id=None):
         if model_id is None:
-            model_id = "google/flan-t5-large"
+            model_id = "google/flan-t5-base"
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.improver = pipeline("text2text-generation", model=model_id, tokenizer=self.tokenizer, max_new_tokens=256)
 

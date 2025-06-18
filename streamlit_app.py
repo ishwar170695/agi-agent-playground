@@ -6,31 +6,46 @@ from agents.planner import PlannerAgent
 from agents.ToolsAgent import ToolAgent
 from agents.CriticAgent import CriticAgent
 from agents.ImproverAgent import ImproverAgent
-from utils.postprocess import clean_and_format_summary
+from utils.postprocess import clean_and_format_summary, preprocess_for_planner
 from utils.export import results_to_markdown
 import io
 from fpdf import FPDF
 
 def run_pipeline(task, doc):
+    # Preprocess doc for planning
+    doc_for_planner = preprocess_for_planner(doc, max_chars=1000)
     planner = PlannerAgent()
     tool = ToolAgent()
     critic = CriticAgent()
     improver = ImproverAgent()
-    structured_steps = planner.structured_output(task)
+    # Pass both task and doc to planner
+    structured_steps = planner.structured_output(task, doc_for_planner)
     final_output = []
     for step in structured_steps["steps"]:
-        if any(x in step.lower() for x in ["calculate", "mean", "median", "stdev"]):
+        # Add more flexible matching for tool routing
+        step_lower = step.lower()
+        if any(x in step_lower for x in ["calculate", "mean", "median", "stdev"]):
             import re
             expr_match = re.search(r"\[(.*?)\]", step)
             if expr_match:
                 numbers = expr_match.group(1)
-                expr = f"mean([{numbers}])" if "mean" in step.lower() else numbers
+                expr = f"mean([{numbers}])" if "mean" in step_lower else numbers
                 output = tool.run(step, expr)
             else:
                 output = tool.run(step, step)
+        elif any(x in step_lower for x in ["summarize", "summary", "write a resume", "write summary", "short summary", "concise summary"]):
+            output = tool.run("summarize", doc)
+        elif any(x in step_lower for x in ["keywords", "key skills", "key points", "extract skills", "list skills"]):
+            output = tool.run("extract_keywords", doc)
+        elif any(x in step_lower for x in ["question", "answer", "qa"]):
+            # For QA, try to extract the question from the step
+            import re
+            q_match = re.search(r'question[:\-]?\s*(.*)', step, re.IGNORECASE)
+            question = q_match.group(1) if q_match else step
+            output = tool.run("answer_question", doc, question=question)
         else:
             output = tool.run(step, doc)
-            output = clean_and_format_summary(output, mode="general")
+        output = clean_and_format_summary(output, mode="general")
         critique = critic.critique(output, context=doc)
         critique = clean_and_format_summary(critique, mode="general")
         improved = improver.improve(output, critique, context=doc)
@@ -120,9 +135,7 @@ if uploaded_file:
                     pdf.set_font("Arial", size=12)
                     for line in md_content.split('\n'):
                         pdf.multi_cell(0, 10, normalize_text(line))
-                    pdf_bytes = io.BytesIO()
-                    pdf.output(pdf_bytes)
-                    pdf_bytes.seek(0)
+                    pdf_bytes = pdf.output(dest='S').encode('latin1')
                     st.download_button(
                         label="Download Results as PDF",
                         data=pdf_bytes,
