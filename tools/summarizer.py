@@ -1,6 +1,5 @@
 from transformers import pipeline, AutoTokenizer
 
-# Load model and tokenizer once
 model_id = "google/flan-t5-base"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 summarizer = pipeline("text2text-generation", model=model_id, tokenizer=tokenizer, max_new_tokens=300)
